@@ -1,0 +1,77 @@
+### IoT-Based Smart Garbage Dustbin Monitoring System with GPS Location and SMS Alert
+
+#### Description
+This project uses an ESP32/NodeMCU microcontroller with an ultrasonic sensor to measure the fill level of a garbage bin. It includes a GPS module to track the bin's location and sends the data to a Flask server over WiFi. When the bin reaches a critical level, the system triggers an SMS alert via Twilio, providing the GPS location and notifying the waste management team.
+
+#### Arduino Code (ESP32/NodeMCU with Ultrasonic Sensor and GPS Module)
+
+#include <WiFi.h>
+#include <HTTPClient.h>
+#include <TinyGPS++.h>
+#include <SoftwareSerial.h>
+
+#define TRIG_PIN  5
+#define ECHO_PIN  18
+#define GPS_TX    16
+#define GPS_RX    17
+
+const char* ssid = "YOUR_WIFI_SSID";
+const char* password = "YOUR_WIFI_PASSWORD";
+const char* serverUrl = "http://YOUR_SERVER_IP:5000/update";  // Flask server endpoint
+
+TinyGPSPlus gps;
+SoftwareSerial gpsSerial(GPS_TX, GPS_RX);
+
+void setup() {
+  Serial.begin(115200);
+  gpsSerial.begin(9600);
+  WiFi.begin(ssid, password);
+
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(1000);
+    Serial.println("Connecting to WiFi...");
+  }
+  Serial.println("Connected to WiFi");
+
+  pinMode(TRIG_PIN, OUTPUT);
+  pinMode(ECHO_PIN, INPUT);
+}
+
+float getDistance() {
+  digitalWrite(TRIG_PIN, LOW);
+  delayMicroseconds(2);
+  digitalWrite(TRIG_PIN, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(TRIG_PIN, LOW);
+  
+  float duration = pulseIn(ECHO_PIN, HIGH);
+  float distance = (duration * 0.0343) / 2;
+  return distance;
+}
+
+void loop() {
+  float distance = getDistance();
+
+  while (gpsSerial.available() > 0) {
+    gps.encode(gpsSerial.read());
+  }
+  
+  if (gps.location.isValid()) {
+    float lat = gps.location.lat();
+    float lng = gps.location.lng();
+    
+    if (WiFi.status() == WL_CONNECTED) {
+      HTTPClient http;
+      http.begin(serverUrl);
+      http.addHeader("Content-Type", "application/json");
+      String payload = "{\"distance\": " + String(distance) + 
+                        ", \"latitude\": " + String(lat) + 
+                        ", \"longitude\": " + String(lng) + "}";
+      int httpResponseCode = http.POST(payload);
+      Serial.println("Response code: " + String(httpResponseCode));
+      http.end();
+    }
+  }
+
+  delay(5000);
+}
